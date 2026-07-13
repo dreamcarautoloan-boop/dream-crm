@@ -63,7 +63,7 @@ async function startServer() {
   });
 
   // Serve the built Expo web app
-  const clientDistPath = path.join(__dirname, "client", "dist");
+  const clientDistPath = path.join(__dirname, "client");
   app.use(express.static(clientDistPath));
 
   app.use(
