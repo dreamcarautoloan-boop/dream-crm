@@ -2,12 +2,17 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "path";
+import { fileURLToPath } from "url";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerAuthRoutes } from "./authRoutes";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -18,7 +23,6 @@ function isPortAvailable(port: number): Promise<boolean> {
     server.on("error", () => resolve(false));
   });
 }
-
 async function findAvailablePort(startPort: number = 3000): Promise<number> {
   for (let port = startPort; port < startPort + 20; port++) {
     if (await isPortAvailable(port)) {
@@ -27,11 +31,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   }
   throw new Error(`No available port found starting from ${startPort}`);
 }
-
 async function startServer() {
   const app = express();
   const server = createServer(app);
-
   // Enable CORS for all routes - reflect the request origin to support credentials
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -44,7 +46,6 @@ async function startServer() {
       "Origin, X-Requested-With, Content-Type, Accept, Authorization",
     );
     res.header("Access-Control-Allow-Credentials", "true");
-
     // Handle preflight requests
     if (req.method === "OPTIONS") {
       res.sendStatus(200);
@@ -52,17 +53,18 @@ async function startServer() {
     }
     next();
   });
-
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerAuthRoutes(app);
-
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
   });
+
+  // Serve the built Expo web app
+  const clientDistPath = path.join(__dirname, "client", "dist");
+  app.use(express.static(clientDistPath));
 
   app.use(
     "/api/trpc",
@@ -72,16 +74,18 @@ async function startServer() {
     }),
   );
 
+  // SPA fallback: any non-API route returns index.html
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(clientDistPath, "index.html"));
+  });
+
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
-
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
-
   server.listen(port, () => {
     console.log(`[api] server listening on port ${port}`);
   });
 }
-
 startServer().catch(console.error);
