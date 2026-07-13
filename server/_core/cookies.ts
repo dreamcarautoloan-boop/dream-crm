@@ -10,37 +10,33 @@ function isIpAddress(host: string) {
 
 function isSecureRequest(req: Request) {
   if (req.protocol === "https") return true;
-
   const forwardedProto = req.headers["x-forwarded-proto"];
   if (!forwardedProto) return false;
-
   const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
-
   return protoList.some((proto) => proto.trim().toLowerCase() === "https");
 }
 
 /**
- * Extract parent domain for cookie sharing across subdomains.
- * e.g., "3000-xxx.manuspre.computer" -> ".manuspre.computer"
- * This allows cookies set by 3000-xxx to be read by 8081-xxx
+ * Only set an explicit cookie domain for known custom domains that need
+ * cross-subdomain sharing. Public shared hosting suffixes (like
+ * onrender.com, vercel.app, etc.) must NOT be used as a cookie domain —
+ * browsers silently reject cookies scoped to public suffixes.
  */
 function getParentDomain(hostname: string): string | undefined {
-  // Don't set domain for localhost or IP addresses
   if (LOCAL_HOSTS.has(hostname) || isIpAddress(hostname)) {
     return undefined;
   }
 
-  // Split hostname into parts
-  const parts = hostname.split(".");
+  const PUBLIC_SUFFIXES = ["onrender.com", "vercel.app", "netlify.app", "manuspre.computer"];
+  if (PUBLIC_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith("." + suffix))) {
+    return undefined;
+  }
 
-  // Need at least 3 parts for a subdomain (e.g., "3000-xxx.manuspre.computer")
-  // For "manuspre.computer", we can't set a parent domain
+  const parts = hostname.split(".");
   if (parts.length < 3) {
     return undefined;
   }
 
-  // Return parent domain with leading dot (e.g., ".manuspre.computer")
-  // This allows cookie to be shared across all subdomains
   return "." + parts.slice(-2).join(".");
 }
 
@@ -49,7 +45,6 @@ export function getSessionCookieOptions(
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
   const hostname = req.hostname;
   const domain = getParentDomain(hostname);
-
   return {
     domain,
     httpOnly: true,
