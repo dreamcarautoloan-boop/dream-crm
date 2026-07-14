@@ -48,13 +48,7 @@ export function registerAuthRoutes(app: Express) {
         return;
       }
 
-      await db.upsertUser({
-        openId: user.openId,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        lastSignedIn: new Date(),
-      });
+      await db.touchLastSignedIn(user.id);
 
       const sessionToken = await sdk.createSessionToken(user.openId, {
         name: user.name || "",

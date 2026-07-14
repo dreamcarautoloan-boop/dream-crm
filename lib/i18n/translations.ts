@@ -111,4 +111,5 @@ export const translations = {
   },
 } as const;
 
-export type TranslationShape = typeof translations.en;
+type DeepWidenToString<T> = { [K in keyof T]: T[K] extends string ? string : DeepWidenToString<T[K]> };
+export type TranslationShape = DeepWidenToString<typeof translations.en>;

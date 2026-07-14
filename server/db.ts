@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { randomBytes } from "node:crypto";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { hashPassword } from "./_core/password";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -18,7 +20,9 @@ export async function getDb() {
   return _db;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
+export async function upsertUser(
+  user: Omit<InsertUser, "username" | "passwordHash"> & Partial<Pick<InsertUser, "username" | "passwordHash">>,
+): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
@@ -32,6 +36,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   try {
     const values: InsertUser = {
       openId: user.openId,
+      // OAuth-provisioned accounts don't use password login, but the schema
+      // requires a unique username + passwordHash for every row. Generate
+      // placeholders on first insert only — never touched on update, so an
+      // account that later gets a real username/password (see users router)
+      // is unaffected.
+      username: user.username ?? `oauth_${randomBytes(6).toString("hex")}`,
+      passwordHash: user.passwordHash ?? hashPassword(randomBytes(32).toString("hex")),
       name: user.name || "Unknown",
       email: user.email || "",
       role: user.role || "sales",
@@ -110,6 +121,14 @@ export async function getUserByUsername(username: string) {
   const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+/** Bumps lastSignedIn for an existing user without touching any other field
+ *  (used by the username/password login route — upsertUser is for OAuth). */
+export async function touchLastSignedIn(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, userId));
 }
 
 // TODO: add feature queries here as your schema grows.
