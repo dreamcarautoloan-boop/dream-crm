@@ -11,7 +11,15 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = drizzle({
+        connection: {
+          uri: process.env.DATABASE_URL,
+          // Managed MySQL providers (e.g. TiDB Cloud) require TLS. Toggle with
+          // DATABASE_SSL=true rather than requiring the connection string
+          // itself to encode SSL parameters.
+          ssl: process.env.DATABASE_SSL === "true" ? { minVersion: "TLSv1.2", rejectUnauthorized: true } : undefined,
+        },
+      });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
