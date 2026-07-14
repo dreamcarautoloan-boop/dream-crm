@@ -13,6 +13,7 @@ function buildUserResponse(user: NonNullable<Awaited<ReturnType<typeof db.getUse
     email: user.email,
     role: user.role,
     teamId: user.teamId,
+    isActive: user.isActive,
     loginMethod: "password",
     lastSignedIn: (user.lastSignedIn ?? new Date()).toISOString(),
   };
@@ -68,5 +69,24 @@ export function registerAuthRoutes(app: Express) {
       console.error("[Auth] Login failed:", error);
       res.status(500).json({ error: "Login failed" });
     }
+  });
+
+  // The client (lib/_core/api.ts: getMe/logout) has always called these two
+  // REST endpoints, but they were never actually registered — web sessions
+  // silently failed to resolve on refresh. Reuse the same session-cookie /
+  // Bearer-token verification sdk.authenticateRequest already does for tRPC.
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      res.json({ user: buildUserResponse(user) });
+    } catch {
+      res.json({ user: null });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    const cookieOptions = getSessionCookieOptions(req);
+    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    res.json({ success: true });
   });
 }

@@ -50,6 +50,8 @@ export default function LoginScreen() {
           name: result.user.name,
           email: result.user.email,
           loginMethod: result.user.loginMethod ?? "password",
+          role: result.user.role,
+          teamId: result.user.teamId ?? null,
           lastSignedIn: new Date(result.user.lastSignedIn || Date.now()),
         });
       }

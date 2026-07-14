@@ -50,6 +50,8 @@ export default function OAuthCallback() {
                 name: userData.name,
                 email: userData.email,
                 loginMethod: userData.loginMethod,
+                role: userData.role ?? "sales",
+                teamId: userData.teamId ?? null,
                 lastSignedIn: new Date(userData.lastSignedIn || Date.now()),
               };
               await Auth.setUserInfo(userInfo);
@@ -201,6 +203,8 @@ export default function OAuthCallback() {
               name: result.user.name,
               email: result.user.email,
               loginMethod: result.user.loginMethod,
+              role: result.user.role ?? "sales",
+              teamId: result.user.teamId ?? null,
               lastSignedIn: new Date(result.user.lastSignedIn || Date.now()),
             };
             await Auth.setUserInfo(userInfo);
