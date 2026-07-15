@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +11,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DateTimeField } from "@/components/date-time-field";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { useColors } from "@/hooks/use-colors";
@@ -58,7 +58,7 @@ export default function CustomerDetailScreen() {
   const [noteType, setNoteType] = useState<NoteType>("call");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
-  const [followUpDate, setFollowUpDate] = useState("");
+  const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [followUpReason, setFollowUpReason] = useState("");
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState("");
@@ -93,7 +93,7 @@ export default function CustomerDetailScreen() {
   const scheduleFollowUp = trpc.followUps.create.useMutation({
     onSuccess: () => {
       setShowFollowUpModal(false);
-      setFollowUpDate("");
+      setFollowUpDate(null);
       setFollowUpReason("");
       invalidateAll();
     },
@@ -324,12 +324,11 @@ export default function CustomerDetailScreen() {
             <Text className="text-lg font-bold text-foreground">{t.customerDetail.scheduleFollowUp}</Text>
             <View className="gap-1.5">
               <Text className="text-sm font-medium text-foreground">{t.customerDetail.followUpDate}</Text>
-              <TextInput
+              <DateTimeField
                 value={followUpDate}
-                onChangeText={setFollowUpDate}
-                placeholder="YYYY-MM-DD HH:MM"
-                placeholderTextColor={colors.muted}
-                className="border border-border rounded-xl px-4 py-3 text-foreground"
+                onChange={setFollowUpDate}
+                placeholder={t.customerDetail.followUpDate}
+                minimumDate={new Date()}
               />
             </View>
             <View className="gap-1.5">
@@ -350,20 +349,16 @@ export default function CustomerDetailScreen() {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  const date = new Date(followUpDate);
-                  if (isNaN(date.getTime())) {
-                    Alert.alert(t.customerDetail.followUpDate);
-                    return;
-                  }
+                  if (!followUpDate) return;
                   scheduleFollowUp.mutate({
                     customerId,
-                    scheduledDate: date,
+                    scheduledDate: followUpDate,
                     reason: followUpReason.trim() || undefined,
                   });
                 }}
-                disabled={!followUpDate.trim() || scheduleFollowUp.isPending}
+                disabled={!followUpDate || scheduleFollowUp.isPending}
                 className="flex-1 rounded-xl py-3 items-center bg-primary"
-                style={{ opacity: !followUpDate.trim() || scheduleFollowUp.isPending ? 0.5 : 1 }}
+                style={{ opacity: !followUpDate || scheduleFollowUp.isPending ? 0.5 : 1 }}
               >
                 <Text className="text-sm font-semibold text-white">{t.common.save}</Text>
               </Pressable>

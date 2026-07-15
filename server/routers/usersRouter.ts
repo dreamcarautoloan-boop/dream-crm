@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { crmProcedure, salesManagerProcedure } from "../_core/trpc";
-import { hashPassword, isPasswordStrongEnough } from "../_core/password";
+import { hashPassword, isPasswordStrongEnough, verifyPassword } from "../_core/password";
 import { logActivity } from "../_core/activityLogger";
 
 const roleEnum = z.enum(["sales_manager", "team_leader", "sales", "moderator"]);
@@ -75,6 +75,42 @@ export const usersRouter = {
       });
 
       return { id: inserted.id };
+    }),
+
+  /** Any user can change their own password (must know the current one). */
+  changeOwnPassword: crmProcedure
+    .input(z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8) }))
+    .mutation(async ({ ctx, input }) => {
+      if (!verifyPassword(input.currentPassword, ctx.user.passwordHash)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Current password is incorrect" });
+      }
+      if (!isPasswordStrongEnough(input.newPassword)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Password must be at least 8 characters" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      await db.update(users).set({ passwordHash: hashPassword(input.newPassword) }).where(eq(users.id, ctx.user.id));
+
+      await logActivity({ userId: ctx.user.id, action: "password_changed" });
+      return { success: true } as const;
+    }),
+
+  /** sales_manager can reset a forgotten password for any team member. */
+  resetPassword: salesManagerProcedure
+    .input(z.object({ userId: z.number().int().positive(), newPassword: z.string().min(8) }))
+    .mutation(async ({ ctx, input }) => {
+      if (!isPasswordStrongEnough(input.newPassword)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Password must be at least 8 characters" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      await db.update(users).set({ passwordHash: hashPassword(input.newPassword) }).where(eq(users.id, input.userId));
+
+      await logActivity({ userId: ctx.user.id, action: "password_reset_by_manager", metadata: { targetUserId: input.userId } });
+      return { success: true } as const;
     }),
 
   /** Activate/deactivate an account (e.g. offboarding a sales rep). */

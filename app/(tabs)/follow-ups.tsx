@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View, Modal } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, Text, View, Modal } from "react-native";
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DateTimeField } from "@/components/date-time-field";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { useColors } from "@/hooks/use-colors";
@@ -19,7 +20,7 @@ export default function FollowUpsScreen() {
 
   const [bucket, setBucket] = useState<Bucket>("today");
   const [rescheduleId, setRescheduleId] = useState<number | null>(null);
-  const [newDate, setNewDate] = useState("");
+  const [newDate, setNewDate] = useState<Date | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = trpc.followUps.listMine.useQuery({ bucket });
 
@@ -37,7 +38,7 @@ export default function FollowUpsScreen() {
   const reschedule = trpc.followUps.reschedule.useMutation({
     onSuccess: () => {
       setRescheduleId(null);
-      setNewDate("");
+      setNewDate(null);
       utils.followUps.listMine.invalidate();
     },
   });
@@ -131,7 +132,7 @@ export default function FollowUpsScreen() {
                     <Pressable
                       onPress={() => {
                         setRescheduleId(item.id);
-                        setNewDate("");
+                        setNewDate(null);
                       }}
                       className="px-3 py-1.5 rounded-full bg-primary/15"
                     >
@@ -155,12 +156,11 @@ export default function FollowUpsScreen() {
         <View className="flex-1 justify-end bg-black/40">
           <View className="bg-background rounded-t-3xl p-5 gap-3">
             <Text className="text-lg font-bold text-foreground">{t.followUpsScreen.reschedule}</Text>
-            <TextInput
+            <DateTimeField
               value={newDate}
-              onChangeText={setNewDate}
-              placeholder="YYYY-MM-DD HH:MM"
-              placeholderTextColor={colors.muted}
-              className="border border-border rounded-xl px-4 py-3 text-foreground"
+              onChange={setNewDate}
+              placeholder={t.followUpsScreen.newDate}
+              minimumDate={new Date()}
             />
             <View className="flex-row gap-3 pt-2">
               <Pressable
@@ -171,13 +171,12 @@ export default function FollowUpsScreen() {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  const date = new Date(newDate);
-                  if (isNaN(date.getTime()) || rescheduleId === null) return;
-                  reschedule.mutate({ id: rescheduleId, scheduledDate: date });
+                  if (!newDate || rescheduleId === null) return;
+                  reschedule.mutate({ id: rescheduleId, scheduledDate: newDate });
                 }}
-                disabled={!newDate.trim() || reschedule.isPending}
+                disabled={!newDate || reschedule.isPending}
                 className="flex-1 rounded-xl py-3 items-center bg-primary"
-                style={{ opacity: !newDate.trim() || reschedule.isPending ? 0.5 : 1 }}
+                style={{ opacity: !newDate || reschedule.isPending ? 0.5 : 1 }}
               >
                 <Text className="text-sm font-semibold text-white">{t.common.save}</Text>
               </Pressable>
