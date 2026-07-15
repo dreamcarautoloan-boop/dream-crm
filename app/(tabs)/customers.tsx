@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useLanguage } from "@/lib/i18n/language-context";
 import { useColors } from "@/hooks/use-colors";
+import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import type { Customer } from "@/drizzle/schema";
 
@@ -48,8 +49,11 @@ export default function CustomersScreen() {
   const router = useRouter();
   const { t, isRTL } = useLanguage();
   const colors = useColors();
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  const canImport = user?.role === "sales_manager" || user?.role === "team_leader" || user?.role === "moderator";
 
   const { data, isLoading, refetch, isRefetching } = trpc.customers.list.useQuery({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -64,12 +68,22 @@ export default function CustomersScreen() {
     <ScreenContainer edges={["top", "left", "right"]}>
       <View className="px-5 pt-4 pb-2 flex-row items-center justify-between">
         <Text className="text-2xl font-bold text-foreground">{t.customersScreen.title}</Text>
-        <Pressable
-          onPress={() => router.push("/customer/new")}
-          className="w-10 h-10 rounded-full bg-primary items-center justify-center"
-        >
-          <IconSymbol name="plus" size={20} color="#fff" />
-        </Pressable>
+        <View className="flex-row items-center gap-2">
+          {canImport ? (
+            <Pressable
+              onPress={() => router.push("/customer/import")}
+              className="w-10 h-10 rounded-full bg-surface border border-border items-center justify-center"
+            >
+              <IconSymbol name="paperplane.fill" size={18} color={colors.primary} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={() => router.push("/customer/new")}
+            className="w-10 h-10 rounded-full bg-primary items-center justify-center"
+          >
+            <IconSymbol name="plus" size={20} color="#fff" />
+          </Pressable>
+        </View>
       </View>
 
       <View className="px-5 pb-3">

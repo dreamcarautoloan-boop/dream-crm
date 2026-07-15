@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
 import { customers, users } from "../../drizzle/schema";
-import { crmProcedure, teamLeaderProcedure } from "../_core/trpc";
+import { crmProcedure, leadIntakeProcedure, teamLeaderProcedure } from "../_core/trpc";
 import { assertCanAccessCustomer, canReassignCustomers, getCustomerOrThrow, isSalesManager } from "../_core/permissions";
 import { logActivity } from "../_core/activityLogger";
 
@@ -231,5 +231,72 @@ export const customersRouter = {
       });
 
       return { success: true } as const;
+    }),
+
+  /**
+   * Bulk-create leads parsed client-side from an uploaded Excel/CSV sheet.
+   * Every row is assigned to the same sales rep (the person distributing the
+   * sheet picks who gets it). Duplicate phone numbers are flagged exactly
+   * like single `create`, never silently dropped, so nothing gets lost.
+   */
+  bulkImport: leadIntakeProcedure
+    .input(
+      z.object({
+        sourceId: z.number().int().positive(),
+        assignedToSalesId: z.number().int().positive(),
+        rows: z
+          .array(
+            z.object({
+              firstName: z.string().min(1),
+              lastName: z.string().min(1),
+              phone: z.string().min(5),
+              email: z.string().email().optional().or(z.literal("")),
+            }),
+          )
+          .min(1)
+          .max(2000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      if (!isSalesManager(ctx.user)) {
+        const [target] = await db.select().from(users).where(eq(users.id, input.assignedToSalesId)).limit(1);
+        if (!target || target.teamId !== ctx.user.teamId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Can only import leads for your own team" });
+        }
+      }
+
+      const existingPhones = new Set(
+        (await db.select({ phone: customers.phone }).from(customers)).map((c) => c.phone),
+      );
+
+      let imported = 0;
+      let duplicates = 0;
+
+      for (const row of input.rows) {
+        const isDuplicate = existingPhones.has(row.phone);
+        await db.insert(customers).values({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          phone: row.phone,
+          email: row.email || undefined,
+          sourceId: input.sourceId,
+          assignedToSalesId: input.assignedToSalesId,
+          isDuplicate,
+        });
+        existingPhones.add(row.phone);
+        if (isDuplicate) duplicates++;
+        else imported++;
+      }
+
+      await logActivity({
+        userId: ctx.user.id,
+        action: "customers_bulk_imported",
+        metadata: { imported, duplicates, assignedToSalesId: input.assignedToSalesId },
+      });
+
+      return { imported, duplicates, total: input.rows.length };
     }),
 };

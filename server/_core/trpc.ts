@@ -88,6 +88,9 @@ export const moderatorProcedure = t.procedure.use(requireRole("moderator"));
 /** sales_manager + team_leader + sales (anyone who works customers day-to-day) */
 export const salesProcedure = t.procedure.use(requireRole("team_leader", "sales"));
 
+/** sales_manager + team_leader + moderator — lead intake roles (manual entry, bulk import). */
+export const leadIntakeProcedure = t.procedure.use(requireRole("team_leader", "moderator"));
+
 /** Any authenticated, active CRM user regardless of role. */
 export const crmProcedure = t.procedure.use(
   t.middleware(async (opts) => {
