@@ -2,8 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
-import { customers, users } from "../../drizzle/schema";
-import { crmProcedure, leadIntakeProcedure, teamLeaderProcedure } from "../_core/trpc";
+import { customers, users, leadSources, salesNotes, followUps, lostDeals } from "../../drizzle/schema";
+import { crmProcedure, leadIntakeProcedure, salesManagerProcedure, teamLeaderProcedure } from "../_core/trpc";
 import { assertCanAccessCustomer, canReassignCustomers, getCustomerOrThrow, isSalesManager } from "../_core/permissions";
 import { logActivity } from "../_core/activityLogger";
 
@@ -298,5 +298,119 @@ export const customersRouter = {
       });
 
       return { imported, duplicates, total: input.rows.length };
+    }),
+
+  /**
+   * One-time historical migration from a legacy tracking sheet. Unlike
+   * `bulkImport`, each row carries its own status/qualification/interest/
+   * note/follow-up/lost-deal info (already cleaned client-side from the old
+   * sheet) and is routed to a specific sales rep by username — so this
+   * reconstructs real history instead of dumping everything as fresh leads.
+   * sales_manager only, since it can create accounts' worth of historical
+   * data across the whole team at once.
+   */
+  legacyImport: salesManagerProcedure
+    .input(
+      z.object({
+        rows: z
+          .array(
+            z.object({
+              salesRepUsername: z.string(),
+              firstName: z.string().min(1),
+              lastName: z.string(),
+              phone: z.string().min(5),
+              sourceKey: z.enum(["existing_customer", "facebook_leads", "referral", "external_call"]),
+              status: customerStatusEnum,
+              isQualified: z.boolean().nullable().optional(),
+              interestLevel: interestLevelEnum.nullable().optional(),
+              note: z.string().optional(),
+              nextFollowUp: z.coerce.date().nullable().optional(),
+              isLost: z.boolean().optional(),
+            }),
+          )
+          .min(1)
+          .max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const allUsers = await db.select().from(users);
+      const userByUsername = new Map(allUsers.map((u) => [u.username, u]));
+
+      const allSources = await db.select().from(leadSources);
+      const sourceByKey = new Map(allSources.map((s) => [s.name, s.id]));
+
+      const existingPhones = new Set(
+        (await db.select({ phone: customers.phone }).from(customers)).map((c) => c.phone),
+      );
+
+      let imported = 0;
+      let duplicates = 0;
+      const skippedUnknownRep = new Set<string>();
+
+      for (const row of input.rows) {
+        const rep = userByUsername.get(row.salesRepUsername);
+        if (!rep) {
+          skippedUnknownRep.add(row.salesRepUsername);
+          continue;
+        }
+        const sourceId = sourceByKey.get(row.sourceKey);
+        if (!sourceId) continue;
+
+        const isDuplicate = existingPhones.has(row.phone);
+        const [inserted] = await db
+          .insert(customers)
+          .values({
+            firstName: row.firstName,
+            lastName: row.lastName || row.firstName,
+            phone: row.phone,
+            sourceId,
+            assignedToSalesId: rep.id,
+            status: row.status,
+            isQualified: row.isQualified ?? undefined,
+            interestLevel: row.interestLevel ?? undefined,
+            isDuplicate,
+          })
+          .$returningId();
+        existingPhones.add(row.phone);
+        if (isDuplicate) duplicates++;
+        else imported++;
+
+        if (row.note) {
+          await db.insert(salesNotes).values({
+            customerId: inserted.id,
+            createdBySalesId: rep.id,
+            note: row.note,
+            noteType: "call",
+          });
+        }
+
+        if (row.nextFollowUp) {
+          await db.insert(followUps).values({
+            customerId: inserted.id,
+            assignedToSalesId: rep.id,
+            scheduledDate: row.nextFollowUp,
+          });
+        }
+
+        if (row.isLost) {
+          await db.insert(lostDeals).values({
+            customerId: inserted.id,
+            closedBySalesId: rep.id,
+            reason: row.note?.slice(0, 500) || "Imported from legacy sheet",
+            reasonCategory: "other",
+          });
+        }
+      }
+
+      await logActivity({
+        userId: ctx.user.id,
+        action: "legacy_customers_imported",
+        metadata: { imported, duplicates, skippedUnknownRep: Array.from(skippedUnknownRep) },
+      });
+
+      return { imported, duplicates, total: input.rows.length, skippedUnknownRep: Array.from(skippedUnknownRep) };
     }),
 };

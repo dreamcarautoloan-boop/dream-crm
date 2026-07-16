@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -16,6 +17,7 @@ export default function TeamScreen() {
   const colors = useColors();
   const { user } = useAuth();
   const utils = trpc.useUtils();
+  const router = useRouter();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [resetTargetId, setResetTargetId] = useState<number | null>(null);
@@ -73,12 +75,20 @@ export default function TeamScreen() {
     <ScreenContainer edges={["top", "left", "right"]}>
       <View className="px-5 pt-4 pb-2 flex-row items-center justify-between">
         <Text className="text-2xl font-bold text-foreground">{t.teamScreen.title}</Text>
-        <Pressable
-          onPress={() => setShowAddModal(true)}
-          className="w-10 h-10 rounded-full bg-primary items-center justify-center"
-        >
-          <IconSymbol name="plus" size={20} color="#fff" />
-        </Pressable>
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={() => router.push("/customer/legacy-import")}
+            className="w-10 h-10 rounded-full bg-surface border border-border items-center justify-center"
+          >
+            <IconSymbol name="paperplane.fill" size={18} color={colors.primary} />
+          </Pressable>
+          <Pressable
+            onPress={() => setShowAddModal(true)}
+            className="w-10 h-10 rounded-full bg-primary items-center justify-center"
+          >
+            <IconSymbol name="plus" size={20} color="#fff" />
+          </Pressable>
+        </View>
       </View>
 
       {isLoading ? (
