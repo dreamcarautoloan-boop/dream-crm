@@ -15,7 +15,7 @@ const ROLES: Role[] = ["sales", "team_leader", "moderator", "sales_manager"];
 export default function TeamScreen() {
   const { t, isRTL } = useLanguage();
   const colors = useColors();
-  const { user } = useAuth();
+  const { user, loading: authLoading, refresh } = useAuth();
   const utils = trpc.useUtils();
   const router = useRouter();
 
@@ -61,10 +61,21 @@ export default function TeamScreen() {
     },
   });
 
+  if (authLoading) {
+    return (
+      <ScreenContainer edges={["top", "left", "right"]} className="items-center justify-center">
+        <ActivityIndicator size="large" color={colors.primary} />
+      </ScreenContainer>
+    );
+  }
+
   if (!isManager) {
     return (
       <ScreenContainer edges={["top", "left", "right"]} className="items-center justify-center px-8">
         <Text className="text-base text-muted text-center">{t.teamScreen.accessDenied}</Text>
+        <Pressable onPress={() => refresh()} className="mt-4 px-4 py-2 rounded-full bg-primary/15">
+          <Text className="text-sm font-medium text-primary">↻</Text>
+        </Pressable>
       </ScreenContainer>
     );
   }
