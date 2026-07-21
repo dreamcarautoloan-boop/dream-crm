@@ -73,6 +73,9 @@ export default function TeamScreen() {
     return (
       <ScreenContainer edges={["top", "left", "right"]} className="items-center justify-center px-8">
         <Text className="text-base text-muted text-center">{t.teamScreen.accessDenied}</Text>
+        <Text className="text-xs text-muted text-center mt-3" selectable>
+          debug: role="{String(user?.role)}" id={String(user?.id)} email="{String(user?.email)}"
+        </Text>
         <Pressable onPress={() => refresh()} className="mt-4 px-4 py-2 rounded-full bg-primary/15">
           <Text className="text-sm font-medium text-primary">↻</Text>
         </Pressable>
