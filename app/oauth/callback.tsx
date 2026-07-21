@@ -1,6 +1,7 @@
 import { ThemedView } from "@/components/themed-view";
 import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
+import { useAuth } from "@/hooks/use-auth";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -9,6 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function OAuthCallback() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const params = useLocalSearchParams<{
     code?: string;
     state?: string;
@@ -63,7 +65,8 @@ export default function OAuthCallback() {
 
           setStatus("success");
           console.log("[OAuth] Web authentication successful, redirecting to home...");
-          setTimeout(() => {
+          setTimeout(async () => {
+            await refresh();
             router.replace("/(tabs)");
           }, 1000);
           return;
@@ -160,7 +163,8 @@ export default function OAuthCallback() {
           // No need to fetch from API
           setStatus("success");
           console.log("[OAuth] Redirecting to home...");
-          setTimeout(() => {
+          setTimeout(async () => {
+            await refresh();
             router.replace("/(tabs)");
           }, 1000);
           return;
@@ -217,8 +221,9 @@ export default function OAuthCallback() {
           console.log("[OAuth] Authentication successful, redirecting to home...");
 
           // Redirect to home after a short delay
-          setTimeout(() => {
+          setTimeout(async () => {
             console.log("[OAuth] Executing redirect...");
+            await refresh();
             router.replace("/(tabs)");
           }, 1000);
         } else {
@@ -236,7 +241,7 @@ export default function OAuthCallback() {
     };
 
     handleCallback();
-  }, [params.code, params.state, params.error, params.sessionToken, params.user, router]);
+  }, [params.code, params.state, params.error, params.sessionToken, params.user, router, refresh]);
 
   return (
     <SafeAreaView className="flex-1" edges={["top", "bottom", "left", "right"]}>

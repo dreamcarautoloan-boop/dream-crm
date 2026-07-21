@@ -13,10 +13,12 @@ import { LanguageToggle } from "@/components/language-toggle";
 import { useLanguage } from "@/lib/i18n/language-context";
 import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function LoginScreen() {
   const router = useRouter();
   const { t, isRTL } = useLanguage();
+  const { refresh } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -56,6 +58,7 @@ export default function LoginScreen() {
         });
       }
 
+      await refresh();
       router.replace("/(tabs)");
     } catch (err) {
       console.error("[Login] failed:", err);
