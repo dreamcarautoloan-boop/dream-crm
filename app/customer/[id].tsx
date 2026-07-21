@@ -67,6 +67,9 @@ export default function CustomerDetailScreen() {
   const [loanAmount, setLoanAmount] = useState("");
   const [monthlyPayment, setMonthlyPayment] = useState("");
   const [duration, setDuration] = useState("");
+  const [vehicleType, setVehicleType] = useState<"new" | "used">("used");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [vehiclePrice, setVehiclePrice] = useState("");
 
   const { data: customer, isLoading } = trpc.customers.getById.useQuery({ id: customerId });
   const { data: notes } = trpc.salesNotes.listByCustomer.useQuery({ customerId });
@@ -83,6 +86,10 @@ export default function CustomerDetailScreen() {
     { customerId },
     { enabled: tab === "financing" },
   );
+  const { data: opportunity } = trpc.salesOpportunities.getByCustomer.useQuery(
+    { customerId },
+    { enabled: tab === "financing" },
+  );
 
   const invalidateAll = () => {
     utils.customers.getById.invalidate({ id: customerId });
@@ -90,6 +97,7 @@ export default function CustomerDetailScreen() {
     utils.salesNotes.listByCustomer.invalidate({ customerId });
     utils.followUps.listMine.invalidate();
     utils.installments.listByCustomer.invalidate({ customerId });
+    utils.salesOpportunities.getByCustomer.invalidate({ customerId });
   };
 
   const addNote = trpc.salesNotes.create.useMutation({
@@ -130,6 +138,16 @@ export default function CustomerDetailScreen() {
   });
 
   const updateApplicationStatus = trpc.installments.updateStatus.useMutation({ onSuccess: invalidateAll });
+
+  const createOpportunity = trpc.salesOpportunities.create.useMutation({
+    onSuccess: () => {
+      setVehicleModel("");
+      setVehiclePrice("");
+      invalidateAll();
+    },
+  });
+
+  const advanceStage = trpc.salesOpportunities.updateStage.useMutation({ onSuccess: invalidateAll });
 
   const allFollowUps = useMemo(
     () => [...(followUps ?? []), ...(upcomingFollowUps ?? [])],
@@ -455,6 +473,130 @@ export default function CustomerDetailScreen() {
                 );
               })
             )}
+
+            {/* Sales opportunity checklist — only once an application is approved */}
+            {(() => {
+              const approvedApp = (applications ?? []).find((a) => a.status === "approved");
+              if (!approvedApp) {
+                return (
+                  <Text className="text-xs text-muted text-center py-2">{t.opportunity.requiresApproval}</Text>
+                );
+              }
+
+              if (!opportunity) {
+                return (
+                  <View className="bg-surface rounded-2xl p-4 border border-border gap-3">
+                    <Text className="text-sm font-semibold text-foreground">{t.opportunity.create}</Text>
+                    <View className="flex-row gap-2">
+                      {(["used", "new"] as const).map((vt) => {
+                        const active = vehicleType === vt;
+                        return (
+                          <Pressable
+                            key={vt}
+                            onPress={() => setVehicleType(vt)}
+                            className="px-3 py-1.5 rounded-full border"
+                            style={{
+                              backgroundColor: active ? colors.primary : "transparent",
+                              borderColor: active ? colors.primary : colors.border,
+                            }}
+                          >
+                            <Text className="text-xs font-medium" style={{ color: active ? "#fff" : colors.text }}>
+                              {vt === "used" ? t.opportunity.used_car : t.opportunity.new_car}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <TextInput
+                      value={vehicleModel}
+                      onChangeText={setVehicleModel}
+                      placeholder={t.opportunity.model}
+                      placeholderTextColor={colors.muted}
+                      className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                      style={{ textAlign: isRTL ? "right" : "left" }}
+                    />
+                    <TextInput
+                      value={vehiclePrice}
+                      onChangeText={setVehiclePrice}
+                      placeholder={t.opportunity.price}
+                      placeholderTextColor={colors.muted}
+                      keyboardType="numeric"
+                      className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                      style={{ textAlign: isRTL ? "right" : "left" }}
+                    />
+                    <Pressable
+                      onPress={() =>
+                        createOpportunity.mutate({
+                          customerId,
+                          installmentApplicationId: approvedApp.id,
+                          vehicleType,
+                          vehicleModel: vehicleModel.trim() || undefined,
+                          vehiclePrice: vehiclePrice ? Number(vehiclePrice) : undefined,
+                        })
+                      }
+                      disabled={createOpportunity.isPending}
+                      className="rounded-xl py-2.5 items-center bg-primary"
+                      style={{ opacity: createOpportunity.isPending ? 0.5 : 1 }}
+                    >
+                      {createOpportunity.isPending ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text className="text-sm font-semibold text-white">{t.opportunity.createButton}</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              }
+
+              type Stage = "inspection_pending" | "quote_pending" | "contract_pending" | "registration_pending" | "completed";
+              const steps: Stage[] =
+                opportunity.vehicleType === "used"
+                  ? ["inspection_pending", "contract_pending", "registration_pending", "completed"]
+                  : ["quote_pending", "contract_pending", "registration_pending", "completed"];
+              const currentIndex = steps.indexOf(opportunity.status as Stage);
+
+              return (
+                <View className="bg-surface rounded-2xl p-4 border border-border gap-2">
+                  <Text className="text-sm font-semibold text-foreground mb-1">{t.opportunity.title}</Text>
+                  {steps.map((step, i) => {
+                    const isDone = currentIndex > i || opportunity.status === "completed";
+                    const isCurrent = i === currentIndex && opportunity.status !== "completed";
+                    return (
+                      <View
+                        key={step}
+                        className="flex-row items-center justify-between py-2"
+                        style={i < steps.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}
+                      >
+                        <View className="flex-row items-center gap-2">
+                          <IconSymbol
+                            name="checkmark.circle.fill"
+                            size={18}
+                            color={isDone ? colors.success : isCurrent ? colors.primary : colors.muted}
+                          />
+                          <Text
+                            className="text-sm"
+                            style={{
+                              color: isDone ? colors.success : isCurrent ? colors.text : colors.muted,
+                              fontWeight: isCurrent ? "600" : "400",
+                            }}
+                          >
+                            {t.opportunity.stage[step]}
+                          </Text>
+                        </View>
+                        {isCurrent && i < steps.length - 1 ? (
+                          <Pressable
+                            onPress={() => advanceStage.mutate({ id: opportunity.id, status: steps[i + 1] })}
+                            className="px-3 py-1.5 rounded-full bg-primary/15"
+                          >
+                            <Text className="text-xs font-medium text-primary">{t.opportunity.done}</Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
           </View>
         )}
       </ScrollView>

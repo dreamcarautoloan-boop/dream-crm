@@ -62,9 +62,24 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
-  // Serve the built Expo web app
+  // Serve the built Expo web app.
+  // Hashed assets (JS/CSS filenames include a content hash) are safe to cache
+  // for a long time. index.html is NOT hashed — without explicit no-cache
+  // headers, some browsers/CDNs can keep serving a stale index.html (and
+  // therefore a stale, possibly-buggy JS bundle) even after a new deploy.
   const clientDistPath = path.join(__dirname, "client");
-  app.use(express.static(clientDistPath));
+  app.use(
+    express.static(clientDistPath, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
 
   app.use(
     "/api/trpc",
@@ -76,6 +91,7 @@ async function startServer() {
 
   // SPA fallback: any non-API route returns index.html
   app.get(/^(?!\/api).*/, (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.join(clientDistPath, "index.html"));
   });
 
