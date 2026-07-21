@@ -53,7 +53,7 @@ export default function CustomerDetailScreen() {
   const colors = useColors();
   const utils = trpc.useUtils();
 
-  const [tab, setTab] = useState<"notes" | "followups">("notes");
+  const [tab, setTab] = useState<"notes" | "followups" | "financing">("notes");
   const [noteText, setNoteText] = useState("");
   const [noteType, setNoteType] = useState<NoteType>("call");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -63,6 +63,10 @@ export default function CustomerDetailScreen() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState("");
   const [closeCategory, setCloseCategory] = useState<ReasonCategory>("customer_not_interested");
+  const [selectedPartnerId, setSelectedPartnerId] = useState<number | null>(null);
+  const [loanAmount, setLoanAmount] = useState("");
+  const [monthlyPayment, setMonthlyPayment] = useState("");
+  const [duration, setDuration] = useState("");
 
   const { data: customer, isLoading } = trpc.customers.getById.useQuery({ id: customerId });
   const { data: notes } = trpc.salesNotes.listByCustomer.useQuery({ customerId });
@@ -74,12 +78,18 @@ export default function CustomerDetailScreen() {
     { bucket: "upcoming", salesId: customer?.assignedToSalesId },
     { enabled: tab === "followups" && !!customer },
   );
+  const { data: partners } = trpc.installments.listPartners.useQuery(undefined, { enabled: tab === "financing" });
+  const { data: applications } = trpc.installments.listByCustomer.useQuery(
+    { customerId },
+    { enabled: tab === "financing" },
+  );
 
   const invalidateAll = () => {
     utils.customers.getById.invalidate({ id: customerId });
     utils.customers.list.invalidate();
     utils.salesNotes.listByCustomer.invalidate({ customerId });
     utils.followUps.listMine.invalidate();
+    utils.installments.listByCustomer.invalidate({ customerId });
   };
 
   const addNote = trpc.salesNotes.create.useMutation({
@@ -108,6 +118,18 @@ export default function CustomerDetailScreen() {
       router.back();
     },
   });
+
+  const submitApplication = trpc.installments.create.useMutation({
+    onSuccess: () => {
+      setSelectedPartnerId(null);
+      setLoanAmount("");
+      setMonthlyPayment("");
+      setDuration("");
+      invalidateAll();
+    },
+  });
+
+  const updateApplicationStatus = trpc.installments.updateStatus.useMutation({ onSuccess: invalidateAll });
 
   const allFollowUps = useMemo(
     () => [...(followUps ?? []), ...(upcomingFollowUps ?? [])],
@@ -159,6 +181,11 @@ export default function CustomerDetailScreen() {
             active={tab === "followups"}
             label={t.customerDetail.followUpsTab}
             onPress={() => setTab("followups")}
+          />
+          <TabButton
+            active={tab === "financing"}
+            label={t.financing.tab}
+            onPress={() => setTab("financing")}
           />
         </View>
 
@@ -273,7 +300,7 @@ export default function CustomerDetailScreen() {
               </View>
             )}
           </View>
-        ) : (
+        ) : tab === "followups" ? (
           <View className="px-5 pt-4 gap-3 pb-4">
             <Pressable
               onPress={() => setShowFollowUpModal(true)}
@@ -302,6 +329,131 @@ export default function CustomerDetailScreen() {
                   </Pressable>
                 </View>
               ))
+            )}
+          </View>
+        ) : (
+          <View className="px-5 pt-4 gap-4 pb-4">
+            {/* Submit financing application */}
+            <View className="bg-surface rounded-2xl p-4 border border-border gap-3">
+              <Text className="text-sm font-semibold text-foreground">{t.financing.submit}</Text>
+
+              <View className="gap-1.5">
+                <Text className="text-xs font-medium text-muted">{t.financing.partner}</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {(partners ?? []).map((partner) => {
+                    const active = selectedPartnerId === partner.id;
+                    return (
+                      <Pressable
+                        key={partner.id}
+                        onPress={() => setSelectedPartnerId(partner.id)}
+                        className="px-3 py-1.5 rounded-full border"
+                        style={{
+                          backgroundColor: active ? colors.primary : "transparent",
+                          borderColor: active ? colors.primary : colors.border,
+                        }}
+                      >
+                        <Text className="text-xs font-medium" style={{ color: active ? "#fff" : colors.text }}>
+                          {partner.displayName}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <TextInput
+                value={loanAmount}
+                onChangeText={setLoanAmount}
+                placeholder={t.financing.loanAmount}
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+                className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                style={{ textAlign: isRTL ? "right" : "left" }}
+              />
+              <TextInput
+                value={monthlyPayment}
+                onChangeText={setMonthlyPayment}
+                placeholder={t.financing.monthlyPayment}
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+                className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                style={{ textAlign: isRTL ? "right" : "left" }}
+              />
+              <TextInput
+                value={duration}
+                onChangeText={setDuration}
+                placeholder={t.financing.duration}
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+                className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                style={{ textAlign: isRTL ? "right" : "left" }}
+              />
+
+              <Pressable
+                onPress={() =>
+                  selectedPartnerId &&
+                  submitApplication.mutate({
+                    customerId,
+                    partnerId: selectedPartnerId,
+                    loanAmount: loanAmount ? Number(loanAmount) : undefined,
+                    monthlyPayment: monthlyPayment ? Number(monthlyPayment) : undefined,
+                    duration: duration ? Number(duration) : undefined,
+                  })
+                }
+                disabled={!selectedPartnerId || submitApplication.isPending}
+                className="rounded-xl py-2.5 items-center bg-primary"
+                style={{ opacity: !selectedPartnerId || submitApplication.isPending ? 0.5 : 1 }}
+              >
+                {submitApplication.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text className="text-sm font-semibold text-white">{t.financing.submitButton}</Text>
+                )}
+              </Pressable>
+            </View>
+
+            {/* Existing applications */}
+            {(applications ?? []).length === 0 ? (
+              <Text className="text-sm text-muted text-center py-4">{t.financing.noApplications}</Text>
+            ) : (
+              [...(applications ?? [])].reverse().map((app) => {
+                const partner = (partners ?? []).find((p) => p.id === app.partnerId);
+                return (
+                  <View key={app.id} className="bg-surface rounded-xl p-3.5 border border-border gap-2">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-semibold text-foreground">
+                        {partner?.displayName ?? `#${app.partnerId}`}
+                      </Text>
+                      <Badge
+                        label={t.financing.status[app.status]}
+                        tone={
+                          app.status === "approved"
+                            ? "success"
+                            : app.status === "rejected" || app.status === "customer_rejected"
+                              ? "error"
+                              : "warning"
+                        }
+                      />
+                    </View>
+                    {app.loanAmount ? (
+                      <Text className="text-sm text-muted">{app.loanAmount}</Text>
+                    ) : null}
+                    <View className="flex-row flex-wrap gap-2 pt-1">
+                      {(["pending", "approved", "rejected", "customer_rejected"] as const)
+                        .filter((s) => s !== app.status)
+                        .map((s) => (
+                          <Pressable
+                            key={s}
+                            onPress={() => updateApplicationStatus.mutate({ id: app.id, status: s })}
+                            className="px-3 py-1.5 rounded-full bg-primary/15"
+                          >
+                            <Text className="text-xs font-medium text-primary">{t.financing.status[s]}</Text>
+                          </Pressable>
+                        ))}
+                    </View>
+                  </View>
+                );
+              })
             )}
           </View>
         )}
