@@ -58,6 +58,8 @@ function buildUserResponse(
     name: user?.name ?? null,
     email: user?.email ?? null,
     loginMethod: user?.loginMethod ?? null,
+    role: (user as any)?.role ?? null,
+    teamId: (user as any)?.teamId ?? null,
     lastSignedIn: (user?.lastSignedIn ?? new Date()).toISOString(),
   };
 }
@@ -129,22 +131,15 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
-    const cookieOptions = getSessionCookieOptions(req);
-    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-    res.json({ success: true });
-  });
+  // NOTE: /api/auth/logout and /api/auth/me are intentionally NOT defined
+  // here anymore. They used to be, and since this file's registerOAuthRoutes()
+  // runs before registerAuthRoutes() in index.ts, Express matched THESE
+  // (older, minimal — no role/teamId/username/isActive) handlers first on
+  // every request, silently shadowing authRoutes.ts's complete versions.
+  // That's what caused role to always come back undefined on the client
+  // regardless of what the database or authRoutes.ts actually said. See
+  // server/_core/authRoutes.ts for the versions actually in use.
 
-  // Get current authenticated user - works with both cookie (web) and Bearer token (mobile)
-  app.get("/api/auth/me", async (req: Request, res: Response) => {
-    try {
-      const user = await sdk.authenticateRequest(req);
-      res.json({ user: buildUserResponse(user) });
-    } catch (error) {
-      console.error("[Auth] /api/auth/me failed:", error);
-      res.status(401).json({ error: "Not authenticated", user: null });
-    }
-  });
 
   // Establish session cookie from Bearer token
   // Used by iframe preview: frontend receives token via postMessage, then calls this endpoint
