@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { customers, installmentApplications, salesOpportunities } from "../../drizzle/schema";
+import { customers, installmentApplications, salesNotes, salesOpportunities } from "../../drizzle/schema";
 import { crmProcedure } from "../_core/trpc";
 import { assertCanAccessCustomer, getCustomerOrThrow } from "../_core/permissions";
 import { logActivity } from "../_core/activityLogger";
@@ -102,6 +102,7 @@ export const salesOpportunitiesRouter = {
         status: stageEnum,
         inspectionResult: z.string().optional(),
         quoteDetails: z.string().optional(),
+        note: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -133,6 +134,18 @@ export const salesOpportunitiesRouter = {
       }
 
       await db.update(salesOpportunities).set(patch).where(eq(salesOpportunities.id, input.id));
+
+      // Record the rep's note about this stage transition so it shows up in
+      // the customer's regular notes timeline too, not just buried in the
+      // opportunity record.
+      if (input.note?.trim()) {
+        await db.insert(salesNotes).values({
+          customerId: opportunity.customerId,
+          createdBySalesId: ctx.user.id,
+          note: input.note.trim(),
+          noteType: "follow_up",
+        });
+      }
 
       if (input.status === "completed") {
         await db.update(customers).set({ status: "closed_won" }).where(eq(customers.id, opportunity.customerId));

@@ -70,6 +70,8 @@ export default function CustomerDetailScreen() {
   const [vehicleType, setVehicleType] = useState<"new" | "used">("used");
   const [vehicleModel, setVehicleModel] = useState("");
   const [vehiclePrice, setVehiclePrice] = useState("");
+  const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [stepNote, setStepNote] = useState("");
 
   const { data: customer, isLoading } = trpc.customers.getById.useQuery({ id: customerId });
   const { data: notes } = trpc.salesNotes.listByCustomer.useQuery({ customerId });
@@ -147,7 +149,13 @@ export default function CustomerDetailScreen() {
     },
   });
 
-  const advanceStage = trpc.salesOpportunities.updateStage.useMutation({ onSuccess: invalidateAll });
+  const advanceStage = trpc.salesOpportunities.updateStage.useMutation({
+    onSuccess: () => {
+      setExpandedStep(null);
+      setStepNote("");
+      invalidateAll();
+    },
+  });
 
   const allFollowUps = useMemo(
     () => [...(followUps ?? []), ...(upcomingFollowUps ?? [])],
@@ -561,35 +569,73 @@ export default function CustomerDetailScreen() {
                   {steps.map((step, i) => {
                     const isDone = currentIndex > i || opportunity.status === "completed";
                     const isCurrent = i === currentIndex && opportunity.status !== "completed";
+                    const isExpanded = expandedStep === step;
                     return (
                       <View
                         key={step}
-                        className="flex-row items-center justify-between py-2"
+                        className="py-2"
                         style={i < steps.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}
                       >
-                        <View className="flex-row items-center gap-2">
-                          <IconSymbol
-                            name="checkmark.circle.fill"
-                            size={18}
-                            color={isDone ? colors.success : isCurrent ? colors.primary : colors.muted}
-                          />
-                          <Text
-                            className="text-sm"
-                            style={{
-                              color: isDone ? colors.success : isCurrent ? colors.text : colors.muted,
-                              fontWeight: isCurrent ? "600" : "400",
-                            }}
-                          >
-                            {t.opportunity.stage[step]}
-                          </Text>
+                        <View className="flex-row items-center justify-between">
+                          <View className="flex-row items-center gap-2">
+                            <IconSymbol
+                              name="checkmark.circle.fill"
+                              size={18}
+                              color={isDone ? colors.success : isCurrent ? colors.primary : colors.muted}
+                            />
+                            <Text
+                              className="text-sm"
+                              style={{
+                                color: isDone ? colors.success : isCurrent ? colors.text : colors.muted,
+                                fontWeight: isCurrent ? "600" : "400",
+                              }}
+                            >
+                              {t.opportunity.stage[step]}
+                            </Text>
+                          </View>
+                          {isCurrent && i < steps.length - 1 ? (
+                            <Pressable
+                              onPress={() => {
+                                setExpandedStep(isExpanded ? null : step);
+                                setStepNote("");
+                              }}
+                              className="px-3 py-1.5 rounded-full bg-primary/15"
+                            >
+                              <Text className="text-xs font-medium text-primary">{t.opportunity.done}</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
-                        {isCurrent && i < steps.length - 1 ? (
-                          <Pressable
-                            onPress={() => advanceStage.mutate({ id: opportunity.id, status: steps[i + 1] })}
-                            className="px-3 py-1.5 rounded-full bg-primary/15"
-                          >
-                            <Text className="text-xs font-medium text-primary">{t.opportunity.done}</Text>
-                          </Pressable>
+
+                        {isExpanded ? (
+                          <View className="gap-2 mt-2">
+                            <TextInput
+                              value={stepNote}
+                              onChangeText={setStepNote}
+                              placeholder={t.customerDetail.notePlaceholder}
+                              placeholderTextColor={colors.muted}
+                              multiline
+                              className="border border-border rounded-xl px-3 py-2 text-sm text-foreground min-h-14"
+                              style={{ textAlign: isRTL ? "right" : "left", textAlignVertical: "top" }}
+                            />
+                            <Pressable
+                              onPress={() =>
+                                advanceStage.mutate({
+                                  id: opportunity.id,
+                                  status: steps[i + 1],
+                                  note: stepNote.trim() || undefined,
+                                })
+                              }
+                              disabled={advanceStage.isPending}
+                              className="self-start rounded-full px-3 py-1.5 bg-primary"
+                              style={{ opacity: advanceStage.isPending ? 0.5 : 1 }}
+                            >
+                              {advanceStage.isPending ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                              ) : (
+                                <Text className="text-xs font-semibold text-white">{t.opportunity.markDone}</Text>
+                              )}
+                            </Pressable>
+                          </View>
                         ) : null}
                       </View>
                     );
